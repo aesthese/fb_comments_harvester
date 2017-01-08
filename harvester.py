@@ -7,33 +7,6 @@ graph = facebook.GraphAPI(token)
 page = "[NAME OF PAGE TO SCRAPE]"
 filnavn = "output.txt"
 
-def cursor_up():
-    print "\x1b[2K\r",
-
-def get_posts():
-    posts = graph.get_connections(page, "posts", limit=25)
-    allposts = []
-
-    print "Getting all posts..."
-    # Looper igennem pages:
-    while (True):
-        try:
-            for post in posts["data"]:
-                print post["id"].encode("utf-8")
-                allposts.append(post["id"].encode("utf-8"))
-            # Forsøg at tilgå data på næste page, hvis den findes.
-            posts = requests.get(posts["paging"]["next"]).json()
-        except KeyError:
-            # Når der ikke er flere pages (["paging"]["next"]), break fra loopet.
-            break
-    return allposts
-
-
-def cursor_up():
-    print "\x1b[2K\r",
-
-def get_posts():
-
 
 def cursor_up():
     print "\x1b[2K\r",
