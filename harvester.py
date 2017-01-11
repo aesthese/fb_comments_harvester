@@ -1,99 +1,137 @@
 # coding=utf-8
-import facebook
+"""
+Harvests all comments from all posts on a Facebook page and writes
+them to a file. No metadata, just raw comment text separated by \n.
+I don't know why the sum of all "total_count" fields returned from
+the FB API, are greater than the number of comments we are able to
+get. It confuses me and now this project bores me. Fork away.
+
+"""
+
+from sys import stdout
 import requests
+import facebook
 
-token = "[INSERT API ACCESS TOKEN HERE]"
-graph = facebook.GraphAPI(token)
-page = "[NAME OF PAGE TO SCRAPE]"
-filnavn = "output.txt"
+# Change stuff here!
+TOKEN = "[YOUR API ACCESS TOKEN HERE]"
+PAGE = "[PAGE TO SCRAPE]"
+FILENAME = "output.txt"
+GRAPH = facebook.GraphAPI(TOKEN)
+
+
+def progress(count, total):
+    """Show progress bar."""
+    bar_len = 60
+    filled_len = int(round(bar_len * count / float(total)))
+
+    percents = round(100.0 * count / float(total), 1)
+    prog_bar = '#' * filled_len + '-' * (bar_len - filled_len)
+
+    stdout.write(
+        '[%s] %s%s (%s/%s)\r' %
+        (prog_bar, int(percents), '%', count, total))
+    stdout.flush()
 
 
 def cursor_up():
-    print "\x1b[2K\r",
-
-
-def get_posts():
-    posts = graph.get_connections(page, "posts", limit=25)
-    allposts = []
-
-    print "Getting all posts..."
-    # Looper igennem pages:
-    while (True):
-        try:
-            for post in posts["data"]:
-                print post["id"].encode("utf-8")
-                allposts.append(post["id"].encode("utf-8"))
-
-def cursor_up():
+    """Move cursor up and clear line."""
     stdout.write("\033[F")  # back to previous line.
-    #stdout.write("\033[K")  #clear line.
+    stdout.write("\033[K")  # clear line.
 
 
 def get_posts():
-    posts = graph.get_connections(page, "posts", limit=25)
+    """Return list of all post IDs on page."""
+    posts = GRAPH.get_connections(PAGE, "posts", limit=25)
     allposts = []
 
-    print "Getting all posts..."
     # Looper igennem pages:
-    while (True):
+    while True:
         try:
             for post in posts["data"]:
                 allposts.append(post["id"].encode("utf-8"))
-            # Forsøg at tilgå data på næste page, hvis den findes.
+            # Try accessing the next page, if it exists.
             posts = requests.get(posts["paging"]["next"]).json()
-            print "%s posts on page" % len(allposts)
+            print "Counting posts: %s" % len(allposts)
             cursor_up()
+
         except KeyError:
-            # Når der ikke er flere pages (["paging"]["next"]), break fra loopet.
-            print "%s posts on page" % len(allposts)
+            # When there are no more pages (["paging"]["next"]), break.
+            print "Total posts: %s" % len(allposts)
             break
+
     return allposts
 
 
-def get_comments(post_id):
-    comments = graph.get_connections(post_id, "comments", limit=250)
-    allcomments = []
+def count_comments(allposts):
+    """Count number of comments from list of posts."""
+    count = 0
+    for post in allposts:
+        summary = GRAPH.get_connections(post, "comments",
+                                        filter="stream",
+                                        summary="true",
+                                        fields="total_count",
+                                        limit=0)
 
-    # Looper igennem pages:
-    while (True):
+        count += summary["summary"]["total_count"]
+        print "Counting comments: %s" % count
+        cursor_up()
+
+    print "Total comments: %s" % count
+    return count
+
+
+def scrape_post(post_id, total):
+    """Scrape all comments on a post and print progress."""
+    comments = GRAPH.get_connections(post_id, "comments",
+                                     filter="stream",
+                                     limit=250)
+    postcomments = []
+
+    # Loop through pages:
+    while True:
 
         try:
             for comment in comments["data"]:
-                allcomments.append(comment["message"].encode("utf-8"))
-            # Forsøg at tilgå data på næste page, hvis den findes.
+                postcomments.append(comment["message"].encode("utf-8"))
+                progress((len(postcomments) + total), NUMBER_OF_COMMENTS)
+
+            # Try accessing the next page, if it exists.
             comments = requests.get(comments["paging"]["next"]).json()
-            print "Getting %s comments from post: %s" % (len(allcomments), post_id)
-            cursor_up()
 
         except KeyError:
-            # Når der ikke er flere pages (["paging"]["next"]), break fra loopet.
+            # When there are no more pages (["paging"]["next"]), break.
             break
-    return allcomments
+
+    return postcomments
 
 
-final_comments = []
-for post in get_posts():
-    print "Current post: %s" % post
-    print "TOTAL COMMENTS: %s" % len(final_comments)
+print "Getting metadata:"
+
+# Collect all post IDs in a list
+ALL_POSTS = get_posts()
+
+# Count comments on all posts
+NUMBER_OF_COMMENTS = count_comments(ALL_POSTS)
+
+# Make list for collection of comments content
+FINAL_COMMENTS = []
+
+print "Downloading comments:"
+# Loop through list of posts and scrape comments
+for post in ALL_POSTS:
+    for comment in scrape_post(post, len(FINAL_COMMENTS)):
+        FINAL_COMMENTS.append(comment)
+
+# Writing each comment to a seperate line in a file
+print "Writing to file"
+
+F = open(FILENAME, "w")
+for idx, comment in enumerate(FINAL_COMMENTS):
+    F.write(comment + "\n")
+    progress(idx, NUMBER_OF_COMMENTS)
     cursor_up()
-    cursor_up()
 
-    for comment in get_comments(post):
-        final_comments.append(comment)
-
-
-
-
-print "SKRIVER TIL FIL"
-
-f = open(filnavn, "w")
-count = 0
-for comment in final_comments:
-    count += 1
-    f.write(comment + "\n")
-    print "skrevet %s linjer" % count
-    cursor_up()
-f.close()
+F.close()
 
 print
 print "Done."
